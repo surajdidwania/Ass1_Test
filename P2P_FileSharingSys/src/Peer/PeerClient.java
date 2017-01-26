@@ -5,6 +5,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
+import java.util.ArrayList;
 import java.util.Scanner;
 
 //import org.apache.commons.io.FileUtils;
@@ -18,6 +19,7 @@ public class PeerClient extends UnicastRemoteObject implements PeerClientIF, Run
 	private PeerServerIF peerServer;
 	private String name = null;
 	private String peerRootDirectoryPath = null;
+	//private ArrayList<String> files = new ArrayList<String>();
 	private String[] files;
 
 	protected PeerClient(String name, PeerServerIF peerServer) throws RemoteException {
@@ -56,6 +58,7 @@ public class PeerClient extends UnicastRemoteObject implements PeerClientIF, Run
 	}
 	
 	public synchronized boolean acceptFile(String filename, byte[] data, int len) throws RemoteException{
+		System.out.println("File downloading...");
         try{
         	File f=new File(filename);
         	f.createNewFile();
@@ -63,7 +66,7 @@ public class PeerClient extends UnicastRemoteObject implements PeerClientIF, Run
         	out.write(data,0,len);
         	out.flush();
         	out.close();
-        	System.out.println("Done writing data...");
+        	System.out.println("Done downloading data...");
         }catch(Exception e){
         	e.printStackTrace();
         }
@@ -73,8 +76,7 @@ public class PeerClient extends UnicastRemoteObject implements PeerClientIF, Run
 	public synchronized boolean sendFile(PeerClientIF c, String file) throws RemoteException{
 		/*
 		 * Sending The File...
-		 * file: receives the file path of file location 
-		 * that was sent to requesting peer from central server
+		 * file: receives the filename that was sent to requesting peer from central server
 		 * c: requesting Peer client
 		 */
 		 try{
@@ -84,11 +86,11 @@ public class PeerClient extends UnicastRemoteObject implements PeerClientIF, Run
 			 int mylen = in.read(mydata);
 			 while(mylen>0){
 				 if(c.acceptFile(f1.getName(), mydata, mylen)){
-					 System.out.println("File has been sent to Requesting Peer");
+					 System.out.println("File '"+file+"' has been sent to Requesting Peer: "+c.getName());
+					 mylen = in.read(mydata);
 				 } else {
 					 System.out.println("Fault: File was NOT sent");
-				 }
-				 mylen = in.read(mydata);				 
+				 }				 
 			 }
 		 }catch(Exception e){
 			 e.printStackTrace();
@@ -96,6 +98,18 @@ public class PeerClient extends UnicastRemoteObject implements PeerClientIF, Run
 		 }
 		
 		return true;
+	}
+	
+	public synchronized void updateServer() throws RemoteException {
+		//get all files in peer root directory
+		File f = new File(peerRootDirectoryPath);
+		this.files = f.list();	//returns directory and files (with extension) in directory
+		if(peerServer.updatePeerClient(this)){
+			System.out.println("Server has been updated with new information");
+		} else {
+			System.out.println("Fault: Server was not updated with new information");
+		}
+		
 	}
 
 	public void run() {
@@ -109,44 +123,56 @@ public class PeerClient extends UnicastRemoteObject implements PeerClientIF, Run
 			if (command.contains(symbol)) {
 				task = command.substring(0, command.indexOf(' '));
 				filename = command.substring(command.indexOf(' ')+1);
-				System.out.println("You want to download the file: "+filename);
 				
-				if (task.equals("download")) {
-					PeerClientIF[] peer;	//peer client that contains file
-					try {
-						//returns a peer with file
-						peer = peerServer.searchFile(filename);
-						if (peer != null) {
-							//list peers with file
-							System.out.println("The following Peers has the file you want:");
-							for (int i=0; i<peer.length; i++) {
-								if (peer[i] != null)
-									System.out.println((i+1)+". "+peer[i].getName());
-							}
-							//prompt user to choose Peer to download from
-							System.out.println("Enter number matching the Peer you will like to download from");
-							
-							int choice = cmdline.nextInt();
-							/*
-							 * establish connection with the peer
-							 * then call sendFile with the client of this peer as parameter
-							 */
-							if(peer[choice-1].sendFile(this, filename)){
-								System.out.println("File has been downloaded");
-							} else {
-								System.out.println("Fault: File was NOT downloaded");
-							}
-							//sendFile(peer[choice-1], filename);
-						} else
-							System.out.println("File not found");
-	
-					} catch (RemoteException e1) {
-						e1.printStackTrace();
-					}	
+				if (task.equals("download") || task.equals('d')) {
+					PeerClientIF[] peer = findFile(filename);
+					int choice = cmdline.nextInt();
+					downloadFile(peer[choice-1], filename);
 				} else {
 					System.out.println("Usage: <task> <item>");
 				}
 			}
 		}
+	}
+
+	private void downloadFile(PeerClientIF peerWithFile, String filename) {
+		//request file directly from Peer
+		try {
+			if(peerWithFile.sendFile(this, filename)){
+				System.out.println("File has been downloaded");
+				updateServer();
+			} else {
+				System.out.println("Fault: File was NOT downloaded");
+			}
+		} catch (RemoteException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+	}
+
+	public synchronized PeerClientIF[] findFile(String filename) {
+		System.out.println("You want to download the file: "+filename);
+		PeerClientIF[] peer;	//peer client that contains file
+		try {
+			//returns a peer with file
+			peer = peerServer.searchFile(filename, name);
+			if (peer != null) {
+				//list peers with file
+				System.out.println("The following Peers has the file you want:");
+				for (int i=0; i<peer.length; i++) {
+					if (peer[i] != null)
+						System.out.println((i+1)+". "+peer[i].getName());
+				}
+				//prompt user to choose Peer to download from
+				System.out.println("Enter number matching the Peer you will like to download from");
+				return peer;
+			} else {
+				System.out.println("File not found. No Peer registered to server has the file.");
+			}
+		} catch (RemoteException e1) {
+			e1.printStackTrace();
+		}
+		return null;		
 	}
 }
