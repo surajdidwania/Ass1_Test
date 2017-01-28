@@ -12,16 +12,18 @@ public class PeerClientDriver {
 
 	public static void main(String[] args) throws MalformedURLException, RemoteException, NotBoundException {
 		
-		if (args.length == 1) {
+		if (args.length == 3) {
 			//link server and client
-			String peerServerURL = "rmi://"+INDEX_SERVER+"/RMIPeerServer";
+			String peerServerURL = "rmi://"+INDEX_SERVER+":"+args[0]+"/peerserver";
 			PeerServerIF peerServer = (PeerServerIF) Naming.lookup(peerServerURL);
-			
+			String peerClientURL = "rmi://"+INDEX_SERVER+":"+args[1]+"/clientserver";
+			Naming.rebind(peerClientURL,new PeerClient());
 			//invoke thread
-			new Thread(new PeerClient(args[0], peerServer)).start();			
+			new Thread(new PeerClient(args[2], peerServer)).start();			
 		} else {
-			System.err.println("Usage: PeerClientDriver <Peer_name>");
+			System.err.println("Usage: PeerClientDriver <port_no> <Peer_name>");
 		}
 	}
+
 
 }
